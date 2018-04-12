@@ -1,5 +1,229 @@
 module BLRT
 
-# package code goes here
+using StatsBase.sample
+
+export traintrees, classify
+export Options, Rule, Leaf, Split, Node
+
+
+immutable Options
+
+    ntrees::Int
+    nsubfeat::Int
+    nthsfeat::Int
+    nthsratio::Int
+    minsamples::Int
+    maxdepth::Int
+
+    function Options(ntrees::Int, nsubfeat::Int, nthsfeat::Int, nthsratio::Int, minsamples::Int, maxdepth::Int)
+        if ntrees < 1
+            error("The minimum number of trees to grow should be greater than 0.")
+        end
+        if nsubfeat < 1
+            error("The minimum number of randomly selected features at each split should be greater than 0.")
+        end
+        if nthsfeat < 1 || nthsratio < 1
+            error("The minimum number of generated splitting thresholds should be greater than 0.")
+        end
+        if minsamples < 1
+            error("The minimum number of samples in nodes to stop further splitting should be greater than 0.")
+        end
+        if maxdepth < -1
+            error("The maximum tree-depth should be greater than or equal to -1. Setting the value to -1 corresponds to unlimited tree-depth.")
+        end
+        new(ntrees, nsubfeat, nthsfeat, nthsratio, minsamples, maxdepth)
+    end
+
+end
+
+
+immutable Rule
+    featid::Int
+    featval::AbstractFloat
+    instratio::AbstractFloat
+end
+
+
+immutable Leaf
+    probability::AbstractFloat
+end
+
+
+immutable Split
+    rule::Rule
+    left::Union{Split, Leaf}
+    right::Union{Split, Leaf}
+end
+
+
+const Node = Union{Split, Leaf}
+
+
+function (phi::Rule)(bag)
+
+    ninst = 0
+    for ii in 1:size(bag, 1)
+        if bag[ii, phi.featid] <= phi.featval
+            ninst += 1
+        end
+    end
+
+    return (ninst / size(bag, 1)) > phi.instratio
+
+end
+
+
+function entropyloss(X, y, rule)
+
+    nleftpos = 0
+    nleftneg = 0
+    nrightpos = 0
+    nrightneg = 0
+
+    for bb in 1:length(X)
+        if rule(X[bb])
+            if y[bb]
+                nleftpos += 1
+            else
+                nleftneg += 1
+            end
+        else
+            if y[bb]
+                nrightpos += 1
+            else
+                nrightneg += 1
+            end
+        end
+    end
+
+    wleft = (nleftpos + nleftneg) / length(X)
+    wright = 1.0 - wleft
+
+    p1 = nleftpos / (nleftpos + nleftneg)
+    p0 = 1.0 - p1
+    entropyleft = (p0 == 0.0) ? 0.0 : -p0*log2(p0)
+    entropyleft += (p1 == 0.0) ? 0.0 : -p1*log2(p1)
+
+    p1 = nrightpos / (nrightpos + nrightneg)
+    p0 = 1.0 - p1
+    entropyright = (p0 == 0.0) ? 0.0 : -p0*log2(p0)
+    entropyright += (p1 == 0.0) ? 0.0 : -p1*log2(p1)
+
+    return wleft*entropyleft + wright*entropyright
+
+end
+
+
+function selectrule(X, y, opt)
+
+    bestloss = Inf
+    bestrule = Nullable{Rule}()
+
+    for ff in sample(1:size(X[1], 2), opt.nsubfeat, replace = false)
+
+        minfeat = typemax(typeof(X[1][1, 1]))
+        maxfeat = typemin(typeof(X[1][1, 1]))
+
+        for bag in X
+            for ii in 1:size(bag, 1)
+                if bag[ii, ff] < minfeat
+                    minfeat = bag[ii, ff]
+                end
+                if bag[ii, ff] > maxfeat
+                    maxfeat = bag[ii, ff]
+                end
+            end
+        end
+
+        if maxfeat > minfeat
+            for vv in rand(opt.nthsfeat) .* (maxfeat-minfeat) .+ minfeat
+                for rr in rand(opt.nthsratio)
+                    rule = Rule(ff, vv, rr)
+                    loss = entropyloss(X, y, rule)
+                    if loss < bestloss
+                        bestloss = loss
+                        bestrule = rule
+                    end
+                end
+            end
+        end
+
+    end
+
+    return bestrule
+
+end
+
+
+function traintree(X, y, opt, depth = 0)::Node
+
+    probability = sum(y) / length(y)
+
+    if opt.maxdepth == depth || probability == 1.0 || probability == 0.0
+        return Leaf(probability)
+    end
+
+    rule = selectrule(X, y, opt)
+
+    if isnull(rule)
+        return Leaf(probability)
+    end
+
+    leftsamples = [rule(bag) for bag in X]
+    leftsamplessum = sum(leftsamples)
+
+    if leftsamplessum < opt.minsamples || (length(X) - leftsamplessum) < opt.minsamples
+        return Leaf(probability)
+    end
+
+    return Split(rule,
+        traintree(X[leftsamples], y[leftsamples], opt, depth + 1),
+        traintree(X[.!leftsamples], y[.!leftsamples], opt, depth + 1)
+    )
+
+end
+
+
+function traintrees{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}, opt::Options)
+
+    return pmap((arg)->traintree(X, y, opt), 1:opt.ntrees)
+
+end
+
+
+function traintrees{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int = 100, nsubfeat::Int = -1, nthsfeat::Int = 4, nthsratio::Int = 4, minsamples::Int = 1, maxdepth::Int = -1)
+
+    if nsubfeat < 0
+        nsubfeat = round(Int, sqrt(size(X[1], 2)))
+    end
+
+    return traintrees(X, y, Options(ntrees, nsubfeat , nthsfeat, nthsratio, minsamples, maxdepth))
+
+end
+
+
+function classify{T <: AbstractFloat}(node::Node, bag::Matrix{T})
+
+    while isa(node, Split)
+        node = node.rule(bag) ? node.left : node.right
+    end
+
+    return node.probability
+
+end
+
+
+function classify{T <: AbstractFloat}(trees, bag::Matrix{T})
+
+    return mean(pmap((arg)->classify(arg...), [(tree, bag) for tree in trees]))
+
+end
+
+
+function classify{T <: AbstractFloat}(trees, bags::Vector{Matrix{T}})
+
+    return [classify(trees, bag) for bag in bags]
+
+end
 
 end # module
