@@ -1,9 +1,11 @@
+__precompile__()
+
 module BLRT
 
 using StatsBase.sample
 
-export traintrees, classify
-export Options, Rule, Leaf, Split, Node
+export train, classify
+export Options, Rule, Leaf, Split, Node, Model
 
 
 immutable Options
@@ -16,22 +18,29 @@ immutable Options
     maxdepth::Int
 
     function Options(ntrees::Int, nsubfeat::Int, nthsfeat::Int, nthsratio::Int, minsamples::Int, maxdepth::Int)
+
         if ntrees < 1
             error("The minimum number of trees to grow should be greater than 0.")
         end
+
         if nsubfeat < 1
             error("The minimum number of randomly selected features at each split should be greater than 0.")
         end
+
         if nthsfeat < 1 || nthsratio < 1
             error("The minimum number of generated splitting thresholds should be greater than 0.")
         end
+
         if minsamples < 1
             error("The minimum number of samples in nodes to stop further splitting should be greater than 0.")
         end
+
         if maxdepth < -1
             error("The maximum tree-depth should be greater than or equal to -1. Setting the value to -1 corresponds to unlimited tree-depth.")
         end
+
         new(ntrees, nsubfeat, nthsfeat, nthsratio, minsamples, maxdepth)
+
     end
 
 end
@@ -59,6 +68,14 @@ end
 const Node = Union{Split, Leaf}
 
 
+immutable Model
+    options::Options
+    trees::Vector{Node}
+    trainingtime::AbstractFloat
+    description::AbstractString
+end
+
+
 function (phi::Rule)(bag)
 
     ninst = 0
@@ -68,7 +85,7 @@ function (phi::Rule)(bag)
         end
     end
 
-    return (ninst / size(bag, 1)) > phi.instratio
+    (ninst / size(bag, 1)) > phi.instratio
 
 end
 
@@ -109,7 +126,7 @@ function entropyloss(X, y, rule)
     entropyright = (p0 == 0.0) ? 0.0 : -p0*log2(p0)
     entropyright += (p1 == 0.0) ? 0.0 : -p1*log2(p1)
 
-    return wleft*entropyleft + wright*entropyright
+    wleft*entropyleft + wright*entropyright
 
 end
 
@@ -119,7 +136,7 @@ function selectrule(X, y, opt)
     bestloss = Inf
     bestrule = Nullable{Rule}()
 
-    for ff in sample(1:size(X[1], 2), opt.nsubfeat, replace = false)
+    for ff in sample(1:size(X[1], 2), opt.nsubfeat, replace=false)
 
         minfeat = typemax(typeof(X[1][1, 1]))
         maxfeat = typemin(typeof(X[1][1, 1]))
@@ -150,12 +167,12 @@ function selectrule(X, y, opt)
 
     end
 
-    return bestrule
+    bestrule
 
 end
 
 
-function traintree(X, y, opt, depth = 0)::Node
+function divide(X, y, opt, depth=0)::Node
 
     probability = sum(y) / length(y)
 
@@ -177,27 +194,28 @@ function traintree(X, y, opt, depth = 0)::Node
     end
 
     return Split(rule,
-        traintree(X[leftsamples], y[leftsamples], opt, depth + 1),
-        traintree(X[.!leftsamples], y[.!leftsamples], opt, depth + 1)
+        divide(X[leftsamples], y[leftsamples], opt, depth+1),
+        divide(X[.!leftsamples], y[.!leftsamples], opt, depth+1)
     )
 
 end
 
 
-function traintrees{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}, opt::Options)
+function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}, opt::Options, description::AbstractString)
 
-    return pmap((arg)->traintree(X, y, opt), 1:opt.ntrees)
+    tic()
+    Model(opt, pmap((arg)->divide(X, y, opt), 1:opt.ntrees), toq(), description)
 
 end
 
 
-function traintrees{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int = 100, nsubfeat::Int = -1, nthsfeat::Int = 4, nthsratio::Int = 4, minsamples::Int = 1, maxdepth::Int = -1)
+function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int=100, nsubfeat::Int=-1, nthsfeat::Int=4, nthsratio::Int=4, minsamples::Int=1, maxdepth::Int=-1, description::AbstractString="none")
 
     if nsubfeat < 0
         nsubfeat = round(Int, sqrt(size(X[1], 2)))
     end
 
-    return traintrees(X, y, Options(ntrees, nsubfeat , nthsfeat, nthsratio, minsamples, maxdepth))
+    train(X, y, Options(ntrees, nsubfeat , nthsfeat, nthsratio, minsamples, maxdepth), description)
 
 end
 
@@ -208,21 +226,21 @@ function classify{T <: AbstractFloat}(node::Node, bag::Matrix{T})
         node = node.rule(bag) ? node.left : node.right
     end
 
-    return node.probability
+    node.probability
 
 end
 
 
-function classify{T <: AbstractFloat}(trees, bag::Matrix{T})
+function classify{T <: AbstractFloat}(model::Model, bag::Matrix{T})
 
-    return mean(pmap((arg)->classify(arg...), [(tree, bag) for tree in trees]))
+    mean(pmap((arg)->classify(arg...), [(tree, bag) for tree in model.trees]))
 
 end
 
 
-function classify{T <: AbstractFloat}(trees, bags::Vector{Matrix{T}})
+function classify{T <: AbstractFloat}(model::Model, bags::Vector{Matrix{T}})
 
-    return [classify(trees, bag) for bag in bags]
+    [classify(model, bag) for bag in bags]
 
 end
 
