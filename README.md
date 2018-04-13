@@ -19,7 +19,7 @@ using MIDatasets
 # Pkg.clone("https://github.com/bcbi/AUC.jl.git")
 using AUC
 
-# Load the dataset with cross-validation indexes
+# Load Musk1 dataset with cross-validation indexes
 X, y, folds = midataset("Musk1", folds=true)
 
 AUCs = Array{AbstractFloat, 2}(10, 5)
