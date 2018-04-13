@@ -22,7 +22,7 @@ using AUC
 # Load Musk1 dataset with cross-validation indexes
 X, y, folds = midataset("Musk1", folds=true)
 
-AUCs = Array{AbstractFloat, 2}(10, 5)
+AUCs = Matrix{AbstractFloat}(10, 5)
 
 for rr in 1:5, ff in 1:10
 
