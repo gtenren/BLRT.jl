@@ -153,9 +153,10 @@ function selectrule(X, y, opt)
         end
 
         if maxfeat > minfeat
-            for vv in rand(opt.nthsfeat) .* (maxfeat-minfeat) .+ minfeat
-                for rr in rand(opt.nthsratio)
-                    rule = Rule(ff, vv, rr)
+            range = maxfeat - minfeat
+            for vv in 1:opt.nthsfeat
+                for rr in 1:opt.nthsratio
+                    rule = Rule(ff, rand() * range + minfeat, rand())
                     loss = entropyloss(X, y, rule)
                     if loss < bestloss
                         bestloss = loss
