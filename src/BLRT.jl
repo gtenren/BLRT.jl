@@ -12,12 +12,11 @@ immutable Options
 
     ntrees::Int
     nsubfeat::Int
-    nthsfeat::Int
-    nthsratio::Int
+    nrules::Int
     minsamples::Int
     maxdepth::Int
 
-    function Options(ntrees::Int, nsubfeat::Int, nthsfeat::Int, nthsratio::Int, minsamples::Int, maxdepth::Int)
+    function Options(ntrees::Int, nsubfeat::Int, nrules::Int, minsamples::Int, maxdepth::Int)
 
         if ntrees < 1
             error("The minimum number of trees to grow should be greater than 0.")
@@ -27,8 +26,8 @@ immutable Options
             error("The minimum number of randomly selected features at each split should be greater than 0.")
         end
 
-        if nthsfeat < 1 || nthsratio < 1
-            error("The minimum number of generated splitting thresholds should be greater than 0.")
+        if nrules < 1
+            error("The minimum number of generated splitting rules should be greater than 0.")
         end
 
         if minsamples < 1
@@ -39,7 +38,7 @@ immutable Options
             error("The maximum tree-depth should be greater than or equal to -1. Setting the value to -1 corresponds to unlimited tree-depth.")
         end
 
-        new(ntrees, nsubfeat, nthsfeat, nthsratio, minsamples, maxdepth)
+        new(ntrees, nsubfeat, nrules, minsamples, maxdepth)
 
     end
 
@@ -154,14 +153,12 @@ function selectrule(X, y, opt)
 
         if maxfeat > minfeat
             range = maxfeat - minfeat
-            for vv in 1:opt.nthsfeat
-                for rr in 1:opt.nthsratio
-                    rule = Rule(ff, rand() * range + minfeat, rand())
-                    loss = entropyloss(X, y, rule)
-                    if loss < bestloss
-                        bestloss = loss
-                        bestrule = rule
-                    end
+            for rr in 1:opt.nrules
+                rule = Rule(ff, rand() * range + minfeat, rand())
+                loss = entropyloss(X, y, rule)
+                if loss < bestloss
+                    bestloss = loss
+                    bestrule = rule
                 end
             end
         end
@@ -210,13 +207,13 @@ function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool},
 end
 
 
-function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int=100, nsubfeat::Int=-1, nthsfeat::Int=4, nthsratio::Int=4, minsamples::Int=1, maxdepth::Int=-1, description::AbstractString="none")
+function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int=100, nsubfeat::Int=-1, nrules::Int=16, minsamples::Int=1, maxdepth::Int=-1, description::AbstractString="none")
 
     if nsubfeat < 0
         nsubfeat = round(Int, sqrt(size(X[1], 2)))
     end
 
-    train(X, y, Options(ntrees, nsubfeat , nthsfeat, nthsratio, minsamples, maxdepth), description)
+    train(X, y, Options(ntrees, nsubfeat, nrules, minsamples, maxdepth), description)
 
 end
 
