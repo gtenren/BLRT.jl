@@ -234,7 +234,7 @@ end
 
 function classify{T <: AbstractFloat}(model::Model, bag::Matrix{T})
 
-    mean(pmap((arg)->classify(arg...), [(tree, bag) for tree in model.trees]))
+    mean(map((arg)->classify(arg...), [(tree, bag) for tree in model.trees]))
 
 end
 
