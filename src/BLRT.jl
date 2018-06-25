@@ -115,12 +115,14 @@ function entropyloss(X, y, rule)
     wleft = (nleftpos + nleftneg) / length(X)
     wright = 1.0 - wleft
 
-    p1 = nleftpos / (nleftpos + nleftneg)
+    nleft = nleftpos + nleftneg
+    p1 = (nleft == 0) ? 0.0 : nleftpos / nleft
     p0 = 1.0 - p1
     entropyleft = (p0 == 0.0) ? 0.0 : -p0*log2(p0)
     entropyleft += (p1 == 0.0) ? 0.0 : -p1*log2(p1)
 
-    p1 = nrightpos / (nrightpos + nrightneg)
+    nright = nrightpos + nrightneg
+    p1 = (nright == 0) ? 0.0 : nrightpos / nright
     p0 = 1.0 - p1
     entropyright = (p0 == 0.0) ? 0.0 : -p0*log2(p0)
     entropyright += (p1 == 0.0) ? 0.0 : -p1*log2(p1)
