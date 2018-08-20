@@ -201,6 +201,8 @@ end
 
 function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}, opt::Options, description::AbstractString)
 
+    @assert length(X) == length(y)
+
     tic()
     Model(opt, pmap((arg)->divide(X, y, opt), 1:opt.ntrees), toq(), description)
 
