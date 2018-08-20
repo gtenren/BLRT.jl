@@ -2,8 +2,6 @@ __precompile__()
 
 module BLRT
 
-using StatsBase.sample
-
 export train, classify
 export Options, Rule, Leaf, Split, Node, Model
 
@@ -137,7 +135,7 @@ function selectrule(X, y, opt)
     bestloss = Inf
     bestrule = Nullable{Rule}()
 
-    for ff in sample(1:size(X[1], 2), opt.nsubfeat, replace=false)
+    for ff in shuffle(1:size(X[1], 2))[1:opt.nsubfeat]
 
         minfeat = typemax(typeof(X[1][1, 1]))
         maxfeat = typemin(typeof(X[1][1, 1]))
