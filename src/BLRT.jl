@@ -1,12 +1,12 @@
-__precompile__()
-
 module BLRT
+
+using Random, Distributed, Statistics
 
 export train, classify
 export Options, Rule, Leaf, Split, Node, Model
 
 
-immutable Options
+struct Options
 
     ntrees::Int
     nsubfeat::Int
@@ -43,19 +43,19 @@ immutable Options
 end
 
 
-immutable Rule
+struct Rule
     featid::Int
     featval::AbstractFloat
     instratio::AbstractFloat
 end
 
 
-immutable Leaf
+struct Leaf
     probability::AbstractFloat
 end
 
 
-immutable Split
+struct Split
     rule::Rule
     left::Union{Split, Leaf}
     right::Union{Split, Leaf}
@@ -65,7 +65,7 @@ end
 const Node = Union{Split, Leaf}
 
 
-immutable Model
+struct Model
     options::Options
     trees::Vector{Node}
     trainingtime::AbstractFloat
@@ -133,7 +133,7 @@ end
 function selectrule(X, y, opt)
 
     bestloss = Inf
-    bestrule = Nullable{Rule}()
+    bestrule = Rule(-1, 0.0, 0.0)
 
     for ff in shuffle(1:size(X[1], 2))[1:opt.nsubfeat]
 
@@ -170,7 +170,7 @@ function selectrule(X, y, opt)
 end
 
 
-function divide(X, y, opt, depth=0)::Node
+function divide(X, y, opt, depth=0)
 
     probability = sum(y) / length(y)
 
@@ -180,7 +180,7 @@ function divide(X, y, opt, depth=0)::Node
 
     rule = selectrule(X, y, opt)
 
-    if isnull(rule)
+    if rule.featid == -1
         return Leaf(probability)
     end
 
@@ -199,17 +199,17 @@ function divide(X, y, opt, depth=0)::Node
 end
 
 
-function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}, opt::Options, description::AbstractString)
+function train(X::Vector{Matrix{T}}, y::AbstractArray{Bool}, opt::Options, description::AbstractString) where T <: AbstractFloat
 
     @assert length(X) == length(y)
 
-    tic()
-    Model(opt, pmap((arg)->divide(X, y, opt), 1:opt.ntrees), toq(), description)
+    starttime = time_ns()
+    Model(opt, pmap((arg)->divide(X, y, opt), 1:opt.ntrees), (time_ns()-starttime)/10^9, description)
 
 end
 
 
-function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int=100, nsubfeat::Int=-1, nrules::Int=16, minsamples::Int=1, maxdepth::Int=-1, description::AbstractString="none")
+function train(X::Vector{Matrix{T}}, y::AbstractArray{Bool}; ntrees::Int=100, nsubfeat::Int=-1, nrules::Int=16, minsamples::Int=1, maxdepth::Int=-1, description::AbstractString="none") where T <: AbstractFloat
 
     if nsubfeat < 0
         nsubfeat = round(Int, sqrt(size(X[1], 2)))
@@ -220,7 +220,7 @@ function train{T <: AbstractFloat}(X::Vector{Matrix{T}}, y::AbstractArray{Bool};
 end
 
 
-function classify{T <: AbstractFloat}(node::Node, bag::Matrix{T})
+function classify(node::Node, bag::Matrix{T}) where T <: AbstractFloat
 
     while isa(node, Split)
         node = node.rule(bag) ? node.left : node.right
@@ -231,14 +231,14 @@ function classify{T <: AbstractFloat}(node::Node, bag::Matrix{T})
 end
 
 
-function classify{T <: AbstractFloat}(model::Model, bag::Matrix{T})
+function classify(model::Model, bag::Matrix{T}) where T <: AbstractFloat
 
     mean(map((arg)->classify(arg...), [(tree, bag) for tree in model.trees]))
 
 end
 
 
-function classify{T <: AbstractFloat}(model::Model, bags::Vector{Matrix{T}})
+function classify(model::Model, bags::Vector{Matrix{T}}) where T <: AbstractFloat
 
     [classify(model, bag) for bag in bags]
 

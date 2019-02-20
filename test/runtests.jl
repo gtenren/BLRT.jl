@@ -1,6 +1,4 @@
-using BLRT
-using Base.Test
-
+using Test, BLRT, Statistics, DelimitedFiles
 
 # Load Mutagenesis2 dataset (X,y)
 const LABEL = 1
@@ -12,7 +10,7 @@ D = readdlm("./Mutagenesis2.csv", ',', Float32)
 numofbags = Int(maximum(D[:, BAGID]))
 
 X = [Vector{Vector{Float32}}() for bb in 1:numofbags]
-y = Vector{Bool}(numofbags)
+y = Vector{Bool}(undef, numofbags)
 
 for ii in 1:size(D, 1)
     bagid = Int(D[ii, BAGID])
@@ -20,7 +18,7 @@ for ii in 1:size(D, 1)
     push!(X[bagid], D[ii, FEATURES])
 end
 
-X = map(bag -> hcat(bag...)', X)
+X = map(bag -> copy(transpose(hcat(bag...))), X)
 
 
 # Fit model
